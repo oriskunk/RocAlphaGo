@@ -4,6 +4,7 @@ WHITE = -1
 BLACK = +1
 EMPTY = 0
 PASS_MOVE = None
+RESIGN_MOVE = -2
 
 
 class GameState(object):

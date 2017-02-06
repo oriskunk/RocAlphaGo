@@ -90,30 +90,42 @@ class GTPGameConnector(object):
 
     def clear(self):
         self._state = go.GameState(self._state.size, enforce_superko=True)
+        if "clear" in dir(self._player):
+            self._player.clear()
 
     def make_move(self, color, vertex):
         # vertex in GTP language is 1-indexed, whereas GameState's are zero-indexed
         try:
             if vertex == gtp.PASS:
                 self._state.do_move(go.PASS_MOVE)
+                if "make_move" in dir(self._player):
+                    self._player.make_move(go.PASS_MOVE)
             else:
                 (x, y) = vertex
                 self._state.do_move((x - 1, y - 1), color)
+                if "make_move" in dir(self._player):
+                    self._player.make_move((x - 1, y -1), color)
             return True
         except go.IllegalMove:
             return False
 
     def set_size(self, n):
         self._state = go.GameState(n, enforce_superko=True)
+        if "set_size" in dir(self._player):
+            self._player.set_size(n)
 
     def set_komi(self, k):
         self._state.komi = k
+        if "set_komi" in dir(self._player):
+            self._player.set_komi(k)
 
     def get_move(self, color):
         self._state.current_player = color
         move = self._player.get_move(self._state)
         if move == go.PASS_MOVE:
             return gtp.PASS
+        elif move == go.RESIGN_MOVE:
+            return "resign"
         else:
             (x, y) = move
             return (x + 1, y + 1)

@@ -1,9 +1,18 @@
 """Policy players"""
 import numpy as np
+from operator import itemgetter
 from AlphaGo import go
 from AlphaGo import mcts
-from operator import itemgetter
+from ctypes import *
 
+import os
+import sys
+sys.path.append(os.environ['NGO_HOME']+'/pachi/')
+from policy_extractor import callback_get_prob
+import policy_extractor
+
+import logging
+logging.basicConfig(filename='ngo.log', level=logging.DEBUG)
 
 class GreedyPolicyPlayer(object):
     """A player that uses a greedy policy (i.e. chooses the highest probability
@@ -147,3 +156,55 @@ class MCTSPlayer(object):
             return move
         # No 'sensible' moves available, so do pass move
         return go.PASS_MOVE
+
+
+class PachiPlayer(object):
+
+    def __init__(self, policy_function, pass_when_offered=False, move_limit=None, engine='', playout_count=0):
+        logging.debug('PachiPlayer:__init__ - pc[%d]', playout_count)
+        self.policy = policy_function
+        self.pass_when_offered = pass_when_offered
+        self.move_limit = move_limit
+        self.plinker = cdll.LoadLibrary(os.environ['NGO_HOME']+'/pachi/libplinker.so')
+        self.CWRAPPER_GET_PROB = CFUNCTYPE(None, POINTER(c_float))
+        self.wrapped_callback_get_prob = self.CWRAPPER_GET_PROB(callback_get_prob)
+        self.plinker.callback_get_prob(self.wrapped_callback_get_prob)
+        self.plinker.engine_init(str(id(self)), engine)
+        self.plinker.set_playout_count(str(id(self)), playout_count)
+        policy_extractor.policy = self.policy
+
+    def get_move(self, state):
+        if self.move_limit is not None and len(state.history) > self.move_limit:
+            return go.PASS_MOVE
+        if self.pass_when_offered:
+            if len(state.history) > 100 and state.history[-1] == go.PASS_MOVE:
+                return go.PASS_MOVE
+
+        move = self.plinker.gen_move(str(id(self)), state.current_player)
+        logging.debug('_move_[%d]', move)
+        if move == -1:
+            return go.PASS_MOVE
+        elif move == -2:
+            return go.PASS_MOVE
+            #return go.RESIGN_MOVE
+
+        return (move/100-1, move%100-1)
+
+    def make_move(self, move, color=go.BLACK):
+        if (move == go.PASS_MOVE):
+            self.plinker.play(str(id(self)), -1, color)
+        else:
+            self.plinker.play(str(id(self)), (move[0]+1)*100 + move[1]+1, color)
+
+    def set_size(self, n):
+        self.plinker.set_size(str(id(self)), n)
+
+    def set_komi(self, k):
+        self.plinker.set_komi(str(id(self)), int(k*10))
+
+    def clear(self):
+        self.plinker.clear(str(id(self)))
+
+    def __del__(self):
+        logging.debug('PachiPlayer:__del__')
+        self.plinker.engine_end(str(id(self)))
