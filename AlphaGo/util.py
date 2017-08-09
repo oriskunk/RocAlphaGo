@@ -1,28 +1,70 @@
 import os
+import sgf
 import itertools
 import numpy as np
-import sgf
 from AlphaGo import go
+from AlphaGo.go import GameState
 
 # for board location indexing
 LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 
+def confirm(prompt=None, resp=False):
+    """
+       prompts for yes or no response from the user. Returns True for yes and
+       False for no.
+       'resp' should be set to the default value assumed by the caller when
+       user simply types ENTER.
+       created by:
+       http://code.activestate.com/recipes/541096-prompt-the-user-for-confirmation/
+    """
+
+    if prompt is None:
+        prompt = 'Confirm'
+
+    if resp:
+        prompt = '%s [%s]|%s: ' % (prompt, 'y', 'n')
+    else:
+        prompt = '%s [%s]|%s: ' % (prompt, 'n', 'y')
+
+    while True:
+        ans = raw_input(prompt)
+        if not ans:
+            return resp
+        if ans not in ['y', 'Y', 'n', 'N']:
+            print 'please enter y or n.'
+            continue
+        if ans == 'y' or ans == 'Y':
+            return True
+        if ans == 'n' or ans == 'N':
+            return False
+
+
 def flatten_idx(position, size):
+    """
+
+    """
+
     (x, y) = position
     return x * size + y
 
 
 def unflatten_idx(idx, size):
+    """
+
+    """
+
     x, y = divmod(idx, size)
     return (x, y)
 
 
 def _parse_sgf_move(node_value):
-    """Given a well-formed move string, return either PASS_MOVE or the (x, y) position
     """
+       Given a well-formed move string, return either PASS_MOVE or the (x, y) position
+    """
+
     if node_value == '' or node_value == 'tt':
-        return go.PASS_MOVE
+        return go.PASS
     else:
         # GameState expects (x, y) where x is column and y is row
         col = LETTERS.index(node_value[0].upper())
@@ -31,30 +73,34 @@ def _parse_sgf_move(node_value):
 
 
 def _sgf_init_gamestate(sgf_root):
-    """Helper function to set up a GameState object from the root node
-    of an SGF file
     """
+       Helper function to set up a GameState object from the root node
+       of an SGF file
+    """
+
     props = sgf_root.properties
-    s_size = props.get('SZ', ['19'])[0]
+    s_size = int(props.get('SZ', ['19'])[0])
     s_player = props.get('PL', ['B'])[0]
     # init board with specified size
-    gs = go.GameState(int(s_size))
+    gs = GameState(size=s_size)
     # handle 'add black' property
     if 'AB' in props:
         for stone in props['AB']:
-            gs.do_move(_parse_sgf_move(stone), go.BLACK)
+            gs.place_handicap_stone(_parse_sgf_move(stone), go.BLACK)
     # handle 'add white' property
     if 'AW' in props:
         for stone in props['AW']:
-            gs.do_move(_parse_sgf_move(stone), go.WHITE)
+            gs.place_handicap_stone(_parse_sgf_move(stone), go.WHITE)
     # setup done; set player according to 'PL' property
-    gs.current_player = go.BLACK if s_player == 'B' else go.WHITE
+    gs.set_current_player(go.BLACK if s_player == 'B' else go.WHITE)
     return gs
 
 
 def sgf_to_gamestate(sgf_string):
-    """Creates a GameState object from the first game in the given collection
     """
+       Creates a GameState object from the first game in the given collection
+    """
+
     # Don't Repeat Yourself; parsing handled by sgf_iter_states
     for (gs, move, player) in sgf_iter_states(sgf_string, True):
         pass
@@ -64,9 +110,11 @@ def sgf_to_gamestate(sgf_string):
 
 
 def save_gamestate_to_sgf(gamestate, path, filename, black_player_name='Unknown',
-                          white_player_name='Unknown', size=19, komi=7.5):
-    """Creates a simplified sgf for viewing playouts or positions
+                          white_player_name='Unknown', size=19, komi=7.5, result=None):
     """
+       Creates a simplified sgf for viewing playouts or positions
+    """
+
     str_list = []
     # Game info
     str_list.append('(;GM[1]FF[4]CA[UTF-8]')
@@ -74,21 +122,25 @@ def save_gamestate_to_sgf(gamestate, path, filename, black_player_name='Unknown'
     str_list.append('KM[{}]'.format(komi))
     str_list.append('PB[{}]'.format(black_player_name))
     str_list.append('PW[{}]'.format(white_player_name))
+
+    if result is not None:
+        str_list.append('RE[{}]'.format(result))
+
     cycle_string = 'BW'
     # Handle handicaps
-    if len(gamestate.handicaps) > 0:
+    if len(gamestate.get_handicaps()) > 0:
         cycle_string = 'WB'
-        str_list.append('HA[{}]'.format(len(gamestate.handicaps)))
+        str_list.append('HA[{}]'.format(len(gamestate.get_handicaps())))
         str_list.append(';AB')
-        for handicap in gamestate.handicaps:
+        for handicap in gamestate.get_handicaps():
             str_list.append('[{}{}]'.format(LETTERS[handicap[0]].lower(),
                                             LETTERS[handicap[1]].lower()))
     # Move list
-    for move, color in zip(gamestate.history, itertools.cycle(cycle_string)):
+    for move, color in zip(gamestate.get_history(), itertools.cycle(cycle_string)):
         # Move color prefix
         str_list.append(';{}'.format(color))
         # Move coordinates
-        if move is None:
+        if move is go.PASS:
             str_list.append('[tt]')
         else:
             str_list.append('[{}{}]'.format(LETTERS[move[0]].lower(), LETTERS[move[1]].lower()))
@@ -98,19 +150,23 @@ def save_gamestate_to_sgf(gamestate, path, filename, black_player_name='Unknown'
 
 
 def sgf_iter_states(sgf_string, include_end=True):
-    """Iterates over (GameState, move, player) tuples in the first game of the given SGF file.
-
-    Ignores variations - only the main line is returned.  The state object is
-    modified in-place, so don't try to, for example, keep track of it through
-    time
-
-    If include_end is False, the final tuple yielded is the penultimate state,
-    but the state will still be left in the final position at the end of
-    iteration because 'gs' is modified in-place the state. See sgf_to_gamestate
-
     """
+       Iterates over (GameState, move, player) tuples in the first game of the given SGF file.
+
+       Ignores variations - only the main line is returned.  The state object is
+       modified in-place, so don't try to, for example, keep track of it through
+       time
+
+       If include_end is False, the final tuple yielded is the penultimate state,
+       but the state will still be left in the final position at the end of
+       iteration because 'gs' is modified in-place the state. See sgf_to_gamestate
+    """
+
     collection = sgf.parse(sgf_string)
     game = collection[0]
+    _winner = game.root.properties.get('RE', ['0'])[0]
+    winner = 1 if _winner[0] == 'B' else -1
+    p_count = 0
     gs = _sgf_init_gamestate(game.root)
     if game.rest is not None:
         for node in game.rest:
@@ -118,14 +174,16 @@ def sgf_iter_states(sgf_string, include_end=True):
             if 'W' in props:
                 move = _parse_sgf_move(props['W'][0])
                 player = go.WHITE
+                p_count += 1
             elif 'B' in props:
                 move = _parse_sgf_move(props['B'][0])
                 player = go.BLACK
-            yield (gs, move, player)
+                p_count += 1
+            yield (gs, move, player, winner, p_count)
             # update state to n+1
             gs.do_move(move, player)
     if include_end:
-        yield (gs, None, None)
+        yield (gs, go.PASS, None, None, None)
 
 
 def plot_network_output(scores, board, history, out_directory, output_file,
@@ -216,7 +274,7 @@ def plot_network_output(scores, board, history, out_directory, output_file,
     # Place red marker on last move if it exists
     if len(history) != 0:
         # If last move was not pass
-        if history[-1] != go.PASS_MOVE:
+        if history[-1] != go.PASS:
             last_move = history[-1]
             x_coord = last_move[0] + 1
             y_coord = last_move[1] + 1

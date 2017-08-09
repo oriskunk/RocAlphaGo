@@ -1,0 +1,40 @@
+{
+  "current_epoch": 1, 
+  "max_validation": 1000000000, 
+  "train_val_test": [
+    0.95, 
+    0.05, 
+    0.0
+  ], 
+  "symmetries": "none", 
+  "learning_rate": 0.003, 
+  "epoch_length": 523153, 
+  "batch_size": 16, 
+  "epochs": 10, 
+  "decay_every": null, 
+  "current_batch": 0, 
+  "training_data": "data/rollout/tygem_0.hdf5", 
+  "generator_sample": 52464, 
+  "dict_3x3": "patterns/3x3.npy", 
+  "dict_12d": "patterns/12d.npy", 
+  "available_states": 523153, 
+  "decay": 1.25e-08, 
+  "dict_nakade": "patterns/nakade.npy", 
+  "epoch_logs": [
+    {
+      "acc": 0.22267608110587803, 
+      "loss": 4.2722931299211639, 
+      "val_acc": 0.23758404645476772, 
+      "val_loss": 4.0102151399136758
+    }, 
+    {
+      "acc": 0.2505562266805309, 
+      "loss": 3.923936012480425, 
+      "val_acc": 0.25324724938875304, 
+      "val_loss": 3.8751392736120156
+    }
+  ], 
+  "best_epoch": 1, 
+  "generator_seed": 3653607558, 
+  "model_file": "model/rollout_use_bias_7201.json"
+}

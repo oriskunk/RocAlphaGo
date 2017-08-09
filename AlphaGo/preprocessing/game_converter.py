@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-import numpy as np
-from AlphaGo.preprocessing.preprocessing import Preprocess
-from AlphaGo.util import sgf_iter_states
-import AlphaGo.go as go
 import os
-import warnings
 import sgf
+import warnings
 import h5py as h5
+import numpy as np
+import AlphaGo.go as go
+from AlphaGo.preprocessing.preprocessing_rollout import Preprocess
+from AlphaGo.util import sgf_iter_states
 
 
 class SizeMismatchError(Exception):
@@ -17,7 +17,7 @@ class GameConverter:
 
     def __init__(self, features):
         self.feature_processor = Preprocess(features)
-        self.n_features = self.feature_processor.output_dim
+        self.n_features = self.feature_processor.get_output_dimension()
 
     def convert_game(self, file_name, bd_size):
         """Read the given SGF file into an iterable of (input,output) pairs
@@ -32,10 +32,10 @@ class GameConverter:
         with open(file_name, 'r') as file_object:
             state_action_iterator = sgf_iter_states(file_object.read(), include_end=False)
 
-        for (state, move, player) in state_action_iterator:
-            if state.size != bd_size:
+        for (state, move, player, _, _) in state_action_iterator:
+            if state.get_size() != bd_size:
                 raise SizeMismatchError()
-            if move != go.PASS_MOVE:
+            if move != go.PASS:
                 nn_input = self.feature_processor.state_to_tensor(state)
                 yield (nn_input, move)
 
@@ -77,23 +77,24 @@ class GameConverter:
                 shape=(1, self.n_features, bd_size, bd_size),
                 maxshape=(None, self.n_features, bd_size, bd_size),  # 'None' == arbitrary size
                 exact=False,  # allow non-uint8 datasets to be loaded, coerced to uint8
-                chunks=(64, self.n_features, bd_size, bd_size),  # approximately 1MB chunks
-                compression="lzf")
+                chunks=(1, self.n_features, bd_size, bd_size))#,  # approximately 1MB chunks
+                #chunks=(64, self.n_features, bd_size, bd_size),  # approximately 1MB chunks
+                #compression="lzf")
             actions = h5f.require_dataset(
                 'actions',
                 dtype=np.uint8,
                 shape=(1, 2),
                 maxshape=(None, 2),
                 exact=False,
-                chunks=(1024, 2),
-                compression="lzf")
+                chunks=(1024, 2))#,
+                #compression="lzf")
 
             # 'file_offsets' is an HDF5 group so that 'file_name in file_offsets' is fast
             file_offsets = h5f.require_group('file_offsets')
 
             # Store comma-separated list of feature planes in the scalar field 'features'. The
             # string can be retrieved using h5py's scalar indexing: h5f['features'][()]
-            h5f['features'] = np.string_(','.join(self.feature_processor.feature_list))
+            h5f['features'] = np.string_(','.join(self.feature_processor.get_feature_list()))
 
             if verbose:
                 print("created HDF5 dataset in {}".format(tmp_file))
